@@ -1,0 +1,62 @@
+CTF Write-up : Remote Code Execution (Injection)
+1. Ziel
+Das Ziel dieser Challenge war es, eine Schwachstelle in einer Webanwendung auszunutzen, um Befehle auf dem Server auszuführen und anschließend die Flag aus der Datei flag.txt auszulesen.
+Für die Analyse und Ausnutzung der Schwachstelle wurde Burp Suite verwendet. 
+Dabei wurden die HTTP-Requests manipuliert und die jeweiligen Ergebnisse in den HTTP-Responses ausgewertet.
+
+2. Analyse des HTTP-Requests
+Zu Beginn wurde der HTTP-Request in Burp Suite untersucht. Dabei fiel insbesondere der Parameter text auf, über den speziell formatierte Eingaben an den Server übermittelt werden konnten.
+Im ersten Schritt wurde folgender Payload verwendet:
+
+%23set($x=$x.class.forName('java.lang.Runtime'))
+%23set($chr=$x.class.forName('java.lang.Character'))
+%23set($str=$x.class.forName('java.lang.String'))
+%23set($ex=$rt.getRuntime().exec('ls ..'))
+$ex.waitFor()
+%23set($out=$ex.getInputStream())
+%23foreach($i in [1..$out.available()])
+$str.valueOf($chr.toChars($out.read()))
+%23end
+
+Durch die Verwendung von Java Reflection wird auf Java-Klassen zugegriffen. Anschließend wird versucht, über Runtime.getRuntime().exec() einen Systembefehl auszuführen.
+Der Befehl ls .. dient dazu, den Inhalt des übergeordneten Verzeichnisses aufzulisten.
+
+3. Auswertung der HTTP-Response
+Nach dem Absenden des Requests wurde die dazugehörige HTTP-Response in Burp Suite analysiert.
+Die Ausgabe des Befehls ls .. sollte zeigen, welche Dateien und Verzeichnisse im übergeordneten Verzeichnis vorhanden sind.
+Auf diese Weise konnte der Speicherort der gesuchten Flag-Datei ermittelt werden.
+Die Rückgabe des Befehls wird über den InputStream des gestarteten Prozesses ausgelesen und als String ausgegeben. Dadurch erscheint die Befehlsausgabe direkt in der HTTP-Response.
+
+4. Auslesen des Flags
+Nachdem der Pfad zur Flag-Datei ermittelt worden war, wurde der Payload angepasst um den Inhalt der Datei flag.txt auszulesen.
+Dazu wurde der auszuführende Befehl von ls .. auf cat+/flag.txt geändert:
+
+%23set($x=$x.class.forName('java.lang.Runtime'))
+%23set($chr=$x.class.forName('java.lang.Character'))
+%23set($str=$x.class.forName('java.lang.String'))
+%23set($ex=$rt.getRuntime().exec('cat /flag.txt'))
+$ex.waitFor()
+%23set($out=$ex.getInputStream())
+%23foreach($i in [1..$out.available()])
+$str.valueOf($chr.toChars($out.read()))
+%23end
+Der entscheidende Unterschied zum ersten Request ist der ausgeführte Systembefehl:
+ls .. : listet Dateien und Verzeichnisse auf.
+cat /flag.txt : versucht, den Inhalt der Flag-Datei auszugeben.
+Nach dem erneuten Senden des Requests wurde die HTTP-Response in Burp Suite überprüft. 
+Bei erfolgreicher Ausführung enthält sie den Inhalt der Datei flag.txt und damit die gesuchte Flag.
+
+5. Ursache der Schwachstelle
+Die Schwachstelle entsteht dadurch, dass Benutzereingaben offenbar durch eine Template-Engine interpretiert werden, ohne sie ausreichend zu isolieren oder zu validieren.
+Falls die Engine zusätzlich den Zugriff auf Java-Klassen und die Ausführung externer Prozesse erlaubt, kann eine manipulierte Eingabe zur Remote Code Execution (RCE) führen.
+Die Schwachstelle ermöglicht es einem Angreifer, beliebige Betriebssystembefehle auszuführen.
+
+6. Fazit
+Die Challenge wurde mithilfe von Burp Suite gelöst. Zunächst wurde über den Parameter text ein Payload zur Ausführung des Befehls ls .. eingeschleust. 
+Die HTTP-Response lieferte die Ausgabe des Befehls und half dabei, den Speicherort der Flag-Datei zu bestimmen.
+Im zweiten Schritt wurde der Payload so angepasst, dass cat /flag.txt ausgeführt wird. 
+
+
+
+
+Die Challenge demonstriert, wie gefährlich eine unsichere Auswertung von Benutzereingaben in serverseitigen Template-Engines sein kann. Eine sichere Implementierung sollte Benutzereingaben niemals ungeprüft als Template-Code ausführen und den Zugriff auf Reflection sowie die Ausführung externer Prozesse entsprechend einschränken.
